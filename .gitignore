@@ -1,0 +1,35 @@
+# King Panel build outputs
+KingPanel.exe
+KingPanel-Setup-*.exe
+Uninstall.exe
+kingpanel.res
+
+# Compiler/linker outputs
+*.o
+*.obj
+*.pdb
+*.lib
+*.exp
+*.ilk
+*.dll
+
+# Zig-generated directories
+.zig-cache/
+zig-cache/
+zig-out/
+
+# Local release/output directories
+dist/
+build/
+out/
+
+# Editor / IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Windows metadata
+Thumbs.db
+Desktop.ini
