@@ -20,7 +20,7 @@ Right click: it brings up an in-depth menu where you can change your refresh rat
 
 This was made to avoid the amount of menus Windows 11 makes you go through just to change your monitor settings, especially refresh-rate. 
 
-King Panel was made with AI-assisted coding.
+The project was developed with AI-assisted coding and packaging help, then manually tested, debugged, and polished to give it that human touch.
 
 Made by: **King Alex Gilbert**
 
