@@ -41,7 +41,7 @@ Made by: **King Alex Gilbert**
 ## Install
 
 ### Recommended
-1. Download `KingPanel-Setup-1.0.0.exe` from this repository's Releases page.
+1. Download `KingPanel-Setup-1.0.0.exe` from the [latest GitHub release](https://github.com/KingAlexGilbert/king-post/releases/latest).
 2. Double-click the exe.
 3. Run through the setup options; setup installs to `Program Files\King Panel`.
 4. The installer offers optional startup, desktop, and Start menu shortcuts for all users.
