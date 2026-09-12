@@ -3,22 +3,22 @@ Unicode true
 !include "LogicLib.nsh"
 !include "x64.nsh"
 Name "King Panel"
-OutFile "KingPanel-Setup-0.9.4.exe"
+OutFile "KingPanel-Setup-0.9.7.exe"
 InstallDir "$PROGRAMFILES64\King Panel"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 SetDatablockOptimize on
 BrandingText "King Panel - King Alex Gilbert"
-VIProductVersion "0.9.4.0"
+VIProductVersion "0.9.7.0"
 VIAddVersionKey /LANG=1033 "ProductName" "King Panel Setup"
 VIAddVersionKey /LANG=1033 "CompanyName" "King Alex Gilbert"
 VIAddVersionKey /LANG=1033 "FileDescription" "King Panel Installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "0.9.4"
+VIAddVersionKey /LANG=1033 "FileVersion" "0.9.7"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "King Alex Gilbert"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\KingPanel"
 !define RUNKEY "Software\Microsoft\Windows\CurrentVersion\Run"
-!define MUI_ICON "crown.ico"
-!define MUI_UNICON "crown.ico"
+!define MUI_ICON "installer.ico"
+!define MUI_UNICON "installer.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TEXT "Install King Panel for all users of this computer.$\r$\n$\r$\nChoose whether to run at sign-in and create desktop and Start menu shortcuts.$\r$\n$\r$\nNo build tools or scripts are needed.$\r$\n$\r$\nIf you used an older AppData installation, uninstall it first from Windows Installed Apps."
 !insertmacro MUI_PAGE_WELCOME
@@ -33,6 +33,17 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "King Alex Gilbert"
 !insertmacro MUI_LANGUAGE "English"
 Var SetupMutex
 
+!macro CheckReparse PATH
+ System::Call 'kernel32::GetFileAttributesW(w "${PATH}") i .r0'
+ ${If} $0 != -1
+  IntOp $0 $0 & 0x400
+  ${If} $0 != 0
+   MessageBox MB_OK|MB_ICONSTOP "Setup cannot use a redirected King Panel folder or executable. Remove the redirection and retry."
+   Abort
+  ${EndIf}
+ ${EndIf}
+!macroend
+
 !macro Init PREFIX INITNAME
 Function ${INITNAME}
  SetShellVarContext all
@@ -41,7 +52,7 @@ Function ${INITNAME}
   MessageBox MB_OK|MB_ICONSTOP "King Panel requires 64-bit Windows."
   Abort
  ${EndIf}
- System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Local\KingPanelSetup") p .r0 ?e'
+ System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Global\KingPanelSetup") p .r0 ?e'
  Pop $1
  StrCpy $SetupMutex $0
  ${If} $0 == 0
@@ -49,6 +60,16 @@ Function ${INITNAME}
   MessageBox MB_OK|MB_ICONSTOP "Another King Panel installer or uninstaller is running. Close it and try again."
   Abort
  ${EndIf}
+FunctionEnd
+Function ${PREFIX}CheckInstallPath
+ ${If} $INSTDIR != "$PROGRAMFILES64\King Panel"
+  MessageBox MB_OK|MB_ICONSTOP "Unexpected installation path. Run Setup again."
+  Abort
+ ${EndIf}
+ ; Reject redirected install folders and executable paths before elevated writes.
+ !insertmacro CheckReparse "$INSTDIR"
+ !insertmacro CheckReparse "$INSTDIR\KingPanel.exe"
+ !insertmacro CheckReparse "$INSTDIR\Uninstall.exe"
 FunctionEnd
 Function ${PREFIX}CheckClosed
  retry:
@@ -68,6 +89,8 @@ Section "King Panel application (required)" SEC_APP
  Call CheckClosed
  ; Fixed x64 machine-wide install target.
  StrCpy $INSTDIR "$PROGRAMFILES64\King Panel"
+ Call CheckInstallPath
+ ClearErrors
  SetOutPath "$INSTDIR"
  SetOverwrite on
  File "KingPanel.exe"
@@ -76,7 +99,7 @@ Section "King Panel application (required)" SEC_APP
   MessageBox MB_OK|MB_ICONSTOP "Could not write the uninstaller. Please rerun Setup."
   Abort
  WriteRegStr HKLM "${KEY}" "DisplayName" "King Panel"
- WriteRegStr HKLM "${KEY}" "DisplayVersion" "0.9.4"
+ WriteRegStr HKLM "${KEY}" "DisplayVersion" "0.9.7"
  WriteRegStr HKLM "${KEY}" "Publisher" "King Alex Gilbert"
  WriteRegStr HKLM "${KEY}" "DisplayIcon" "$INSTDIR\KingPanel.exe,0"
  WriteRegStr HKLM "${KEY}" "InstallLocation" "$INSTDIR"
@@ -124,6 +147,7 @@ SectionEnd
 
 Section "Uninstall"
  Call un.CheckClosed
+ Call un.CheckInstallPath
  ReadRegStr $0 HKLM "${KEY}" "InstallLocation"
  ${If} $0 != $INSTDIR
   MessageBox MB_OK|MB_ICONSTOP "This uninstaller does not match the registered King Panel installation. Run it from the installed folder."

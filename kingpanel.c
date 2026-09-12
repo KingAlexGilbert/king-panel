@@ -10,6 +10,19 @@
 #include <setupapi.h>
 #include <stdlib.h>
 #include <wchar.h>
+#include <stdarg.h>
+#include <stdint.h>
+
+// Always terminate truncated labels, including unusually long driver names.
+static void safeFormat(WCHAR *out, size_t capacity, const WCHAR *format, ...) {
+    if (!capacity) return;
+    out[0] = 0;
+    va_list args;
+    va_start(args, format);
+    vswprintf(out, capacity, format, args);
+    va_end(args);
+    out[capacity - 1] = 0;
+}
 
 #define APP L"King Panel"
 #define TRAY_MSG (WM_APP + 1)
@@ -21,7 +34,12 @@
 #define ID_SCALE_LAST 61999
 
 typedef struct { WCHAR device[32]; DEVMODEW mode; } Choice;
-static Choice *choices;
+// Menu selections only need these five fields; full DEVMODE is kept for rollback.
+typedef struct {
+    WCHAR device[32];
+    DWORD width, height, frequency, bits, flags;
+} MenuChoice;
+static MenuChoice *choices;
 static size_t count, capacity;
 static HWND owner, confirmation, countdown;
 static NOTIFYICONDATAW tray;
@@ -31,7 +49,7 @@ static UINT taskbarCreated;
 static const GUID kingPanelTrayGuid = {
     0x2b39554d, 0x54a0, 0x4b67, {0xa7, 0x27, 0x52, 0x42, 0x77, 0x16, 0x9d, 0xe1}
 };
-static BOOL pending, menuOpen;
+static BOOL pending, menuOpen, menuInvalidated;
 static Choice previous, requested;
 static ULONGLONG deadline;
 static HFONT font;
@@ -114,14 +132,46 @@ static const UINT32 scaleValues[] = {
 typedef struct MenuLabel {
     struct MenuLabel *next;
     WCHAR text[256];
-    BOOL separator;
+    BOOL separator, submenu;
 } MenuLabel;
 static MenuLabel *labels;
-static BOOL dark;
+static BOOL dark, highContrast;
 static HBRUSH darkBrush;
 static HFONT menuFont;
 static int dpi = 96;
 static int px(int value) { return MulDiv(value, dpi, 96); }
+// Opt into per-monitor-v2 while constructing/showing menus so custom menu
+// geometry uses the target monitor DPI. Confirmation windows retain their DPI
+// behavior. All APIs are resolved from the already-loaded system user32 module.
+typedef HANDLE (WINAPI *SetThreadDpiContextFn)(HANDLE);
+typedef UINT (WINAPI *GetWindowDpiFn)(HWND);
+typedef BOOL (WINAPI *SystemMetricsForDpiFn)(UINT, UINT, PVOID, UINT, UINT);
+static SetThreadDpiContextFn setThreadDpiContext;
+static GetWindowDpiFn getWindowDpi;
+static SystemMetricsForDpiFn systemMetricsForDpi;
+static HANDLE beginMenuDpi(POINT pt) {
+    HANDLE oldContext = NULL;
+    if (setThreadDpiContext) oldContext = setThreadDpiContext((HANDLE)(INT_PTR)-4);
+    if (!oldContext) return NULL; // Older Windows retains system-DPI behavior.
+    // An invisible, short-lived window supplies the actual DPI at the tray menu.
+    // The owner window is system-aware and cannot supply per-monitor DPI itself.
+    HWND probe = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"",
+        WS_POPUP, pt.x, pt.y, 1, 1, NULL, NULL, GetModuleHandleW(NULL), NULL);
+    UINT targetDpi = probe && getWindowDpi ? getWindowDpi(probe) : 0;
+    if (probe) DestroyWindow(probe);
+    NONCLIENTMETRICSW metrics = {0}; metrics.cbSize = sizeof(metrics);
+    if (!targetDpi || !systemMetricsForDpi ||
+        !systemMetricsForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, targetDpi)) {
+        setThreadDpiContext(oldContext);
+        return NULL;
+    }
+    HFONT replacement = CreateFontIndirectW(&metrics.lfMenuFont);
+    if (!replacement) { setThreadDpiContext(oldContext); return NULL; }
+    if (menuFont != font) DeleteObject(menuFont);
+    menuFont = replacement;
+    dpi = (int)targetDpi;
+    return oldContext;
+}
 static void updateTheme(void) {
     DWORD light = 1, bytes = sizeof(light);
     HIGHCONTRASTW hc = {0}; hc.cbSize = sizeof(hc);
@@ -129,7 +179,8 @@ static void updateTheme(void) {
     RegGetValueW(HKEY_CURRENT_USER,
         L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
         L"AppsUseLightTheme", RRF_RT_REG_DWORD, NULL, &light, &bytes);
-    dark = !light && !(hc.dwFlags & HCF_HIGHCONTRASTON);
+    highContrast = (hc.dwFlags & HCF_HIGHCONTRASTON) != 0;
+    dark = !light && !highContrast;
     if (confirmation) {
         DwmSetWindowAttribute(confirmation, 20, &dark, sizeof(dark));
         RedrawWindow(confirmation, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
@@ -139,9 +190,9 @@ static void releaseLabels(void) {
     while (labels) { MenuLabel *next = labels->next; free(labels); labels = next; }
 }
 static void themeMenu(HMENU menu) {
-    if (!dark) return;
+    if (highContrast) return;
     MENUINFO info = {0}; info.cbSize = sizeof(info);
-    info.fMask = MIM_BACKGROUND; info.hbrBack = darkBrush;
+    info.fMask = MIM_BACKGROUND; info.hbrBack = dark ? darkBrush : GetSysColorBrush(COLOR_MENU);
     SetMenuInfo(menu, &info);
     for (int i = 0; i < GetMenuItemCount(menu); ++i) {
         MenuLabel *label = calloc(1, sizeof(*label));
@@ -151,6 +202,7 @@ static void themeMenu(HMENU menu) {
         item.dwTypeData = label->text; item.cch = 256;
         if (!GetMenuItemInfoW(menu, (UINT)i, TRUE, &item)) { free(label); continue; }
         label->separator = (item.fType & MFT_SEPARATOR) != 0;
+        label->submenu = item.hSubMenu != NULL;
         if (item.hSubMenu) themeMenu(item.hSubMenu);
         item.fMask = MIIM_FTYPE | MIIM_DATA;
         item.fType |= MFT_OWNERDRAW;
@@ -176,16 +228,20 @@ static BOOL drawMenu(DRAWITEMSTRUCT *d) {
     int saved = SaveDC(d->hDC);
     BOOL selected = (d->itemState & ODS_SELECTED) != 0;
     BOOL disabled = (d->itemState & (ODS_DISABLED | ODS_GRAYED)) != 0;
-    SetDCBrushColor(d->hDC, selected && !disabled ? RGB(55,55,55) : RGB(24,24,24));
+    COLORREF background = dark ? (selected && !disabled ? RGB(55,55,55) : RGB(24,24,24)) :
+        GetSysColor(selected && !disabled ? COLOR_HIGHLIGHT : COLOR_MENU);
+    COLORREF foreground = dark ? (disabled ? RGB(145,145,145) : RGB(240,240,240)) :
+        GetSysColor(disabled ? COLOR_GRAYTEXT : selected ? COLOR_HIGHLIGHTTEXT : COLOR_MENUTEXT);
+    SetDCBrushColor(d->hDC, background);
     FillRect(d->hDC, &d->rcItem, (HBRUSH)GetStockObject(DC_BRUSH));
     if (label->separator) {
         RECT line = d->rcItem; line.left += px(10); line.right -= px(10);
         line.top = (line.top+line.bottom)/2; line.bottom = line.top+1;
-        SetDCBrushColor(d->hDC, RGB(65,65,65));
+        SetDCBrushColor(d->hDC, dark ? RGB(65,65,65) : GetSysColor(COLOR_3DSHADOW));
         FillRect(d->hDC, &line, (HBRUSH)GetStockObject(DC_BRUSH));
     } else {
         SetBkMode(d->hDC, TRANSPARENT);
-        SetTextColor(d->hDC, disabled ? RGB(145,145,145) : RGB(240,240,240));
+        SetTextColor(d->hDC, foreground);
         SelectObject(d->hDC, menuFont);
         RECT text = d->rcItem; text.left += px(30); text.right -= px(26);
         DrawTextW(d->hDC, label->text, -1, &text, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
@@ -193,9 +249,27 @@ static BOOL drawMenu(DRAWITEMSTRUCT *d) {
             RECT check = d->rcItem; check.left += px(7); check.right = check.left+px(20);
             DrawTextW(d->hDC, L"\x2713", 1, &check, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
         }
-        // Windows draws the submenu arrow; do not draw a second glyph.
+        if (label->submenu) {
+            // Filled geometry, not a font glyph or Windows' small stock bitmap.
+            // At 300% this triangle is 24 x 36 physical pixels.
+            int right = d->rcItem.right - px(10);
+            int middle = (d->rcItem.top + d->rcItem.bottom) / 2;
+            POINT arrow[3] = {{right-px(8), middle-px(6)},
+                              {right, middle}, {right-px(8), middle+px(6)}};
+            SelectObject(d->hDC, GetStockObject(NULL_PEN));
+            SelectObject(d->hDC, GetStockObject(DC_BRUSH));
+            SetDCBrushColor(d->hDC, foreground);
+            Polygon(d->hDC, arrow, 3);
+        }
     }
     RestoreDC(d->hDC, saved);
+    if (label->submenu) {
+        // Windows paints its stock arrow after WM_DRAWITEM returns. Exclude
+        // this row's arrow gutter from that subsequent pass to avoid two arrows.
+        // Keep this exclusion after RestoreDC; restoring it would undo suppression.
+        ExcludeClipRect(d->hDC, d->rcItem.right-px(26), d->rcItem.top,
+                        d->rcItem.right+px(32), d->rcItem.bottom);
+    }
     return TRUE;
 }
 static BOOL drawButton(DRAWITEMSTRUCT *d) {
@@ -221,7 +295,7 @@ static BOOL drawButton(DRAWITEMSTRUCT *d) {
 
 static void error(const WCHAR *what, LONG code) {
     WCHAR msg[512];
-    swprintf(msg, 512, L"%ls\n\nWindows display status: %ld", what, code);
+    safeFormat(msg, 512, L"%ls\n\nWindows display status: %ld", what, code);
     MessageBoxW(owner, msg, APP, MB_OK | MB_ICONERROR);
 }
 static BOOL current(const WCHAR *device, DEVMODEW *mode) {
@@ -292,12 +366,16 @@ static UINT addChoice(const WCHAR *device, const DEVMODEW *mode) {
     if (count >= ID_EXIT - 1) return 0;
     if (count == capacity) {
         size_t n = capacity ? capacity * 2 : 128;
-        Choice *p = realloc(choices, n * sizeof(*p));
+        MenuChoice *p = realloc(choices, n * sizeof(*p));
         if (!p) return 0;
         choices = p; capacity = n;
     }
     lstrcpynW(choices[count].device, device, 32);
-    choices[count].mode = *mode;
+    choices[count].width = mode->dmPelsWidth;
+    choices[count].height = mode->dmPelsHeight;
+    choices[count].frequency = mode->dmDisplayFrequency;
+    choices[count].bits = mode->dmBitsPerPel;
+    choices[count].flags = mode->dmDisplayFlags;
     return (UINT)++count;
 }
 static void addTray(void) {
@@ -307,7 +385,7 @@ static void addTray(void) {
     }
 }
 static BOOL findPrimaryDevice(WCHAR deviceName[CCHDEVICENAME]) {
-    for (DWORD d = 0; ; ++d) {
+    for (DWORD d = 0; d < 256; ++d) {
         DISPLAY_DEVICEW device = {0}; device.cb = sizeof(device);
         if (!EnumDisplayDevicesW(NULL, d, &device, 0)) break;
         if (!(device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) ||
@@ -318,18 +396,32 @@ static BOOL findPrimaryDevice(WCHAR deviceName[CCHDEVICENAME]) {
     }
     return FALSE;
 }
-static BOOL displaySourceForDevice(const WCHAR *deviceName, LUID *adapterId, UINT32 *sourceId) {
+static DISPLAYCONFIG_PATH_INFO *activePaths(UINT32 *countOut) {
+    *countOut = 0;
     for (int attempt = 0; attempt < 3; ++attempt) {
-        UINT32 pathCount = 0, modeCount = 0;
-        LONG status = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount);
-        if (status != ERROR_SUCCESS || !pathCount) return FALSE;
-        DISPLAYCONFIG_PATH_INFO *paths = calloc(pathCount, sizeof(*paths));
-        DISPLAYCONFIG_MODE_INFO *modes = calloc(modeCount ? modeCount : 1, sizeof(*modes));
-        if (!paths || !modes) { free(paths); free(modes); return FALSE; }
-        UINT32 pc = pathCount, mc = modeCount;
-        status = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pc, paths, &mc, modes, NULL);
-        if (status == ERROR_INSUFFICIENT_BUFFER) { free(paths); free(modes); continue; }
-        if (status != ERROR_SUCCESS) { free(paths); free(modes); return FALSE; }
+        UINT32 pc = 0, mc = 0;
+        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pc, &mc) != ERROR_SUCCESS ||
+            !pc || pc > 4096 || mc > 16384) return NULL;
+        const UINT32 pathCapacity = pc, modeCapacity = mc;
+        DISPLAYCONFIG_PATH_INFO *paths = calloc(pc, sizeof(*paths));
+        DISPLAYCONFIG_MODE_INFO *modes = calloc(mc ? mc : 1, sizeof(*modes));
+        if (!paths || !modes) { free(paths); free(modes); return NULL; }
+        LONG status = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pc, paths, &mc, modes, NULL);
+        free(modes);
+        if (status == ERROR_SUCCESS && pc <= pathCapacity && mc <= modeCapacity) {
+            *countOut = pc;
+            return paths;
+        }
+        free(paths);
+        if (status != ERROR_INSUFFICIENT_BUFFER) break;
+    }
+    return NULL;
+}
+static BOOL displaySourceForDevice(const WCHAR *deviceName, LUID *adapterId, UINT32 *sourceId) {
+    {
+        UINT32 pc = 0;
+        DISPLAYCONFIG_PATH_INFO *paths = activePaths(&pc);
+        if (!paths) return FALSE;
 
         BOOL found = FALSE;
         for (UINT32 i = 0; i < pc; ++i) {
@@ -346,7 +438,7 @@ static BOOL displaySourceForDevice(const WCHAR *deviceName, LUID *adapterId, UIN
                 break;
             }
         }
-        free(paths); free(modes);
+        free(paths);
         return found;
     }
     return FALSE;
@@ -372,14 +464,15 @@ static BOOL getScaleInfo(LUID adapterId, UINT32 sourceId, ScaleInfo *info, LONG 
     if (status != ERROR_SUCCESS) return FALSE;
 
     const int valueCount = (int)(sizeof(scaleValues)/sizeof(scaleValues[0]));
-    if (request.minScaleRel > 0 || request.maxScaleRel < request.minScaleRel) return FALSE;
-    int recommendedIndex = -request.minScaleRel;
-    int currentIndex = recommendedIndex + request.curScaleRel;
-    int maximumIndex = recommendedIndex + request.maxScaleRel;
+    int64_t recommendedIndex = -(int64_t)request.minScaleRel;
+    int64_t currentIndex = recommendedIndex + request.curScaleRel;
+    int64_t maximumIndex = recommendedIndex + request.maxScaleRel;
     if (recommendedIndex < 0 || recommendedIndex >= valueCount ||
-        maximumIndex < recommendedIndex || maximumIndex >= valueCount) return FALSE;
-    if (currentIndex < 0) currentIndex = 0;
-    if (currentIndex > maximumIndex) currentIndex = maximumIndex;
+        maximumIndex < recommendedIndex || maximumIndex >= valueCount ||
+        currentIndex < 0 || currentIndex > maximumIndex) {
+        if (statusOut) *statusOut = ERROR_INVALID_DATA;
+        return FALSE;
+    }
 
     info->minimum = scaleValues[0];
     info->current = scaleValues[currentIndex];
@@ -436,11 +529,11 @@ static HMENU buildScalingMenu(LUID adapterId, UINT32 sourceId, WCHAR label[64]) 
         UINT id = addScaleChoice(adapterId, sourceId, percent);
         if (!id) { DestroyMenu(menu); return NULL; }
         WCHAR item[32];
-        swprintf(item, 32, L"%u%%", (unsigned)percent);
+        safeFormat(item, 32, L"%u%%", (unsigned)percent);
         AppendMenuW(menu, MF_STRING | (percent == info.current ? MF_CHECKED : 0), id, item);
     }
     if (!GetMenuItemCount(menu)) { DestroyMenu(menu); return NULL; }
-    swprintf(label, 64, L"Scaling - %u%%", (unsigned)info.current);
+    safeFormat(label, 64, L"Scaling - %u%%", (unsigned)info.current);
     return menu;
 }
 
@@ -448,17 +541,10 @@ static BOOL primaryHdrTarget(HdrTarget *target) {
     WCHAR primary[CCHDEVICENAME];
     if (!findPrimaryDevice(primary)) return FALSE;
 
-    for (int attempt = 0; attempt < 3; ++attempt) {
-        UINT32 pathCount = 0, modeCount = 0;
-        LONG status = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount);
-        if (status != ERROR_SUCCESS || !pathCount) return FALSE;
-        DISPLAYCONFIG_PATH_INFO *paths = calloc(pathCount, sizeof(*paths));
-        DISPLAYCONFIG_MODE_INFO *modes = calloc(modeCount ? modeCount : 1, sizeof(*modes));
-        if (!paths || !modes) { free(paths); free(modes); return FALSE; }
-        UINT32 pc = pathCount, mc = modeCount;
-        status = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pc, paths, &mc, modes, NULL);
-        if (status == ERROR_INSUFFICIENT_BUFFER) { free(paths); free(modes); continue; }
-        if (status != ERROR_SUCCESS) { free(paths); free(modes); return FALSE; }
+    {
+        UINT32 pc = 0;
+        DISPLAYCONFIG_PATH_INFO *paths = activePaths(&pc);
+        if (!paths) return FALSE;
 
         BOOL found = FALSE;
         for (UINT32 i = 0; i < pc && !found; ++i) {
@@ -491,12 +577,14 @@ static BOOL primaryHdrTarget(HdrTarget *target) {
                 continue;
             }
 
+            if (newer != ERROR_NOT_SUPPORTED && newer != ERROR_INVALID_PARAMETER) continue;
+
             KpGetAdvancedColorInfo legacy = {0};
             legacy.header.type = KP_INFO_GET_ADVANCED_COLOR;
             legacy.header.size = sizeof(legacy);
             legacy.header.adapterId = paths[i].targetInfo.adapterId;
             legacy.header.id = paths[i].targetInfo.id;
-            if (DisplayConfigGetDeviceInfo(&legacy.header) == ERROR_SUCCESS && (legacy.value & 1u)) {
+            if (DisplayConfigGetDeviceInfo(&legacy.header) == ERROR_SUCCESS && (legacy.value & 1u) && !(legacy.value & (1u << 3))) {
                 target->adapterId = paths[i].targetInfo.adapterId;
                 target->targetId = paths[i].targetInfo.id;
                 target->enabled = (legacy.value & (1u << 1)) != 0;
@@ -504,7 +592,7 @@ static BOOL primaryHdrTarget(HdrTarget *target) {
                 found = TRUE;
             }
         }
-        free(paths); free(modes);
+        free(paths);
         return found;
     }
     return FALSE;
@@ -561,7 +649,7 @@ static void updateCountdown(void) {
     ULONGLONG now = GetTickCount64();
     if (now >= deadline) { finish(FALSE); return; }
     WCHAR text[160];
-    swprintf(text, 160, L"Keep these display settings?\nReverting in %llu seconds.",
+    safeFormat(text, 160, L"Keep these display settings?\nReverting in %llu seconds.",
              (unsigned long long)((deadline - now + 999) / 1000));
     SetWindowTextW(countdown, text);
 }
@@ -679,13 +767,27 @@ static void CALLBACK popupOpened(HWINEVENTHOOK hook, DWORD event, HWND w,
 static void showMenu(BOOL quick) {
     if (pending) { SetForegroundWindow(confirmation); return; }
     if (menuOpen) return;
+    POINT pt = {0}; GetCursorPos(&pt);
+    int savedDpi = dpi;
+    HFONT savedMenuFont = menuFont;
+    // Keep the system-DPI font for the fallback path and later confirmation UI.
+    menuFont = font;
+    HANDLE oldDpiContext = beginMenuDpi(pt);
+    if (!oldDpiContext) menuFont = savedMenuFont;
     updateTheme();
     menuOpen = TRUE;
+    menuInvalidated = FALSE;
     HMENU root = CreatePopupMenu();
-    if (!root) { menuOpen = FALSE; return; }
+    if (!root) {
+        if (oldDpiContext) {
+            DeleteObject(menuFont); menuFont = savedMenuFont; dpi = savedDpi;
+            setThreadDpiContext(oldDpiContext);
+        }
+        menuOpen = FALSE; return;
+    }
     count = 0;
     scaleCount = 0;
-    for (DWORD d = 0; ; ++d) {
+    for (DWORD d = 0; d < 256; ++d) {
         DISPLAY_DEVICEW device = {0}; device.cb = sizeof(device);
         if (!EnumDisplayDevicesW(NULL, d, &device, 0)) break;
         if (!(device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) ||
@@ -693,7 +795,7 @@ static void showMenu(BOOL quick) {
         DEVMODEW live;
         if (!current(device.DeviceName, &live)) continue;
         DEVMODEW *modes = NULL; size_t n = 0, cap = 0;
-        for (DWORD i = 0; ; ++i) {
+        for (DWORD i = 0; i < 16384; ++i) {
             DEVMODEW mode = {0}; mode.dmSize = sizeof(mode);
             if (!EnumDisplaySettingsExW(device.DeviceName, i, &mode, 0)) break;
             if (mode.dmBitsPerPel != 32 || mode.dmDisplayOrientation != live.dmDisplayOrientation) continue;
@@ -719,14 +821,14 @@ static void showMenu(BOOL quick) {
                 width = m->dmPelsWidth; height = m->dmPelsHeight;
                 resolution = CreatePopupMenu();
                 if (!resolution) break;
-                swprintf(label, 256, L"%lu x %lu", (unsigned long)width, (unsigned long)height);
-                AppendMenuW(monitor, MF_POPUP | ((width == live.dmPelsWidth && height == live.dmPelsHeight) ? MF_CHECKED : 0),
-                            (UINT_PTR)resolution, label);
+                safeFormat(label, 256, L"%lu x %lu", (unsigned long)width, (unsigned long)height);
+                if (!AppendMenuW(monitor, MF_POPUP | ((width == live.dmPelsWidth && height == live.dmPelsHeight) ? MF_CHECKED : 0),
+                            (UINT_PTR)resolution, label)) { DestroyMenu(resolution); break; }
             }
             UINT id = addChoice(device.DeviceName, m);
             if (!id) break;
             if (m->dmDisplayFrequency <= 1) lstrcpyW(label, L"Driver default");
-            else swprintf(label, 256, L"%lu Hz%ls", (unsigned long)m->dmDisplayFrequency,
+            else safeFormat(label, 256, L"%lu Hz%ls", (unsigned long)m->dmDisplayFrequency,
                 (m->dmDisplayFlags & DM_INTERLACED) ? L" (interlaced)" : L"");
             AppendMenuW(resolution, MF_STRING | (sameMode(m, &live) ? MF_CHECKED : 0), id, label);
         }
@@ -756,16 +858,16 @@ static void showMenu(BOOL quick) {
         WCHAR displayLabel[64];
         const WCHAR *displayNumber = wcsstr(device.DeviceName, L"DISPLAY");
         if (displayNumber && displayNumber[7] >= L'0' && displayNumber[7] <= L'9')
-            swprintf(displayLabel, 64, L"Display %ls", displayNumber + 7);
+            safeFormat(displayLabel, 64, L"Display %ls", displayNumber + 7);
         else
-            swprintf(displayLabel, 64, L"Display %lu", (unsigned long)d + 1);
-        swprintf(label, 256, L"%ls - %ls%ls", displayLabel, monitorName,
+            safeFormat(displayLabel, 64, L"Display %lu", (unsigned long)d + 1);
+        safeFormat(label, 256, L"%ls - %ls%ls", displayLabel, monitorName,
             (device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) ? L" (primary)" : L"");
         if (quick) {
             size_t used = (size_t)lstrlenW(label);
-            swprintf(label+used, 256-used, L" - %lu x %lu", (unsigned long)live.dmPelsWidth, (unsigned long)live.dmPelsHeight);
+            safeFormat(label+used, 256-used, L" - %lu x %lu", (unsigned long)live.dmPelsWidth, (unsigned long)live.dmPelsHeight);
         }
-        AppendMenuW(root, MF_POPUP, (UINT_PTR)monitor, label);
+        if (!AppendMenuW(root, MF_POPUP, (UINT_PTR)monitor, label)) DestroyMenu(monitor);
     }
     if (!GetMenuItemCount(root)) AppendMenuW(root, MF_GRAYED, 0, L"No active monitors found");
     if (quick && GetMenuItemCount(root) == 1 && GetSubMenu(root, 0)) {
@@ -800,7 +902,7 @@ static void showMenu(BOOL quick) {
         AppendMenuW(root, MF_GRAYED, 0, L"King Panel - King Alex Gilbert");
     }
     themeMenu(root);
-    POINT pt; GetCursorPos(&pt); SetForegroundWindow(owner);
+    SetForegroundWindow(owner);
     positionedRoot = root;
     menuHook = SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART,
         NULL, popupOpened, GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT);
@@ -811,9 +913,22 @@ static void showMenu(BOOL quick) {
     PostMessageW(owner, WM_NULL, 0, 0);
     DestroyMenu(root);
     releaseLabels();
+    if (oldDpiContext) {
+        DeleteObject(menuFont); menuFont = savedMenuFont; dpi = savedDpi;
+        setThreadDpiContext(oldDpiContext);
+    }
+    if (menuInvalidated) id = 0;
     Choice selected = {0};
     ScaleChoice scaleSelected = {0}; BOOL hasScaleChoice = FALSE;
-    if (id > 0 && id <= count) selected = choices[id-1];
+    if (id > 0 && id <= count) {
+        const MenuChoice *choice = &choices[id-1];
+        lstrcpynW(selected.device, choice->device, 32);
+        selected.mode.dmPelsWidth = choice->width;
+        selected.mode.dmPelsHeight = choice->height;
+        selected.mode.dmDisplayFrequency = choice->frequency;
+        selected.mode.dmBitsPerPel = choice->bits;
+        selected.mode.dmDisplayFlags = choice->flags;
+    }
     if (id >= ID_SCALE_FIRST && id <= ID_SCALE_LAST) {
         size_t scaleIndex = (size_t)(id - ID_SCALE_FIRST);
         if (scaleIndex < scaleCount) { scaleSelected = scaleChoices[scaleIndex]; hasScaleChoice = TRUE; }
@@ -842,10 +957,14 @@ static LRESULT CALLBACK windowProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_MEASUREITEM: if (measureMenu((MEASUREITEMSTRUCT *)lp)) return TRUE; break;
     case WM_DRAWITEM: if (drawMenu((DRAWITEMSTRUCT *)lp)) return TRUE; break;
+    case WM_DISPLAYCHANGE:
+    case WM_DEVICECHANGE:
+        if (menuOpen) { menuInvalidated = TRUE; EndMenu(); }
+        return 0;
     case WM_SETTINGCHANGE:
     case WM_THEMECHANGED:
     case WM_SYSCOLORCHANGE:
-        if (menuOpen) EndMenu();
+        if (menuOpen) { menuInvalidated = TRUE; EndMenu(); }
         updateTheme(); return 0;
     case WM_QUERYENDSESSION: finish(FALSE); return TRUE;
     case WM_CLOSE: finish(FALSE); DestroyWindow(w); return 0;
@@ -859,6 +978,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE unused, LPSTR command, int show
     if (!mutex) return 1;
     if (GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(mutex); return 0; }
     SetProcessDPIAware();
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    setThreadDpiContext = (SetThreadDpiContextFn)(void *)GetProcAddress(user32, "SetThreadDpiAwarenessContext");
+    getWindowDpi = (GetWindowDpiFn)(void *)GetProcAddress(user32, "GetDpiForWindow");
+    systemMetricsForDpi = (SystemMetricsForDpiFn)(void *)GetProcAddress(user32, "SystemParametersInfoForDpi");
     font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
     HDC screen = GetDC(NULL); dpi = GetDeviceCaps(screen, LOGPIXELSX); ReleaseDC(NULL, screen);
     NONCLIENTMETRICSW metrics = {0}; metrics.cbSize = sizeof(metrics);
@@ -898,3 +1021,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE unused, LPSTR command, int show
     CloseHandle(mutex);
     return result == -1 ? 1 : 0;
 }
+
+_Static_assert(sizeof(Choice) == 284, "rollback choice ABI");
+_Static_assert(sizeof(MenuChoice) == 84, "compact choice ABI");
+_Static_assert(sizeof(KpGetDpiScale) == 32, "DPI query ABI");
+_Static_assert(sizeof(KpSetDpiScale) == 24, "DPI setter ABI");
+_Static_assert(sizeof(KpGetAdvancedColorInfo2) == 36, "HDR query ABI");
+_Static_assert(sizeof(KpSetColorState) == 24, "HDR setter ABI");

@@ -4,6 +4,19 @@ All notable changes to King Panel are documented here.
 
 ## [Unreleased]
 
+## [0.9.7] - Initial release
+
+- Added display-query bounds, safe label formatting and scaling arithmetic checks.
+- Reduced memory per saved menu choice and removed duplicated display-query code.
+- Added stack protection and an explicit normal-user application manifest.
+- Hardened installer path checks and reduced installer icon overhead.
+- Added DPI-scaled submenu arrows and duplicate-arrow suppression.
+- Preserved dark/light menus and upward submenu positioning.
+
+Known limitation: native submenus can briefly appear in their initial position
+before moving upward. Per-monitor scaling uses undocumented Windows packets.
+The unsuccessful later positioning experiment is not included.
+
 ## [0.9.4]
 
 - Removed the menu-window subclass introduced in 0.9.3.
