@@ -5,11 +5,11 @@
 2. Review the diff, commit the updated files, and push your branch. The `dist`
    folder and generated EXEs are already ignored by Git.
 3. Confirm the Build workflow succeeds and test the app on Windows.
-4. From the intended release commit, create and push the `v0.9.7` tag:
+4. From the intended release commit, create and push the `v1.0.0` tag:
 
    ```sh
-   git tag v0.9.7
-   git push origin v0.9.7
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 Pushing this tag triggers the existing Release workflow, which builds and
@@ -20,7 +20,7 @@ Alternatively, create a release manually through GitHub using the same tag and
 upload the files from `dist`. Use one publishing route; the automated workflow
 can replace assets with its own freshly compiled binaries when the tag is pushed.
 
-Suggested title: **King Panel v0.9.7 - Initial release**
+Suggested title: **King Panel v1.0.0 - Initial release**
 
 Suggested notes:
 
@@ -33,10 +33,10 @@ Suggested notes:
 
 ## Checks performed for this package
 
-- Application source matches the restored 0.9.9 source byte-for-byte; versions
-  stay at 0.9.7 to match the supplied first-release binaries.
+- Application behavior matches the restored build; executable and installer
+  version resources are updated to 1.0.0.
 - Manifest and both required ICO resources are present.
-- Supplied binaries were preserved and checksummed; installer payload checked.
+- Version 1.0.0 binaries were rebuilt and checksummed; installer payload checked.
 - Source cross-build checked with warnings treated as errors.
 - Existing license, workflow files, and contribution guide were preserved.
 

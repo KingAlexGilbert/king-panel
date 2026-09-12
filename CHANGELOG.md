@@ -4,7 +4,7 @@ All notable changes to King Panel are documented here.
 
 ## [Unreleased]
 
-## [0.9.7] - Initial release
+## [1.0.0] - Initial release
 
 - Added display-query bounds, safe label formatting and scaling arithmetic checks.
 - Reduced memory per saved menu choice and removed duplicated display-query code.

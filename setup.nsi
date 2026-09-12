@@ -3,17 +3,17 @@ Unicode true
 !include "LogicLib.nsh"
 !include "x64.nsh"
 Name "King Panel"
-OutFile "KingPanel-Setup-0.9.7.exe"
+OutFile "KingPanel-Setup-1.0.0.exe"
 InstallDir "$PROGRAMFILES64\King Panel"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 SetDatablockOptimize on
 BrandingText "King Panel - King Alex Gilbert"
-VIProductVersion "0.9.7.0"
+VIProductVersion "1.0.0.0"
 VIAddVersionKey /LANG=1033 "ProductName" "King Panel Setup"
 VIAddVersionKey /LANG=1033 "CompanyName" "King Alex Gilbert"
 VIAddVersionKey /LANG=1033 "FileDescription" "King Panel Installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "0.9.7"
+VIAddVersionKey /LANG=1033 "FileVersion" "1.0.0"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "King Alex Gilbert"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\KingPanel"
 !define RUNKEY "Software\Microsoft\Windows\CurrentVersion\Run"
@@ -99,7 +99,7 @@ Section "King Panel application (required)" SEC_APP
   MessageBox MB_OK|MB_ICONSTOP "Could not write the uninstaller. Please rerun Setup."
   Abort
  WriteRegStr HKLM "${KEY}" "DisplayName" "King Panel"
- WriteRegStr HKLM "${KEY}" "DisplayVersion" "0.9.7"
+ WriteRegStr HKLM "${KEY}" "DisplayVersion" "1.0.0"
  WriteRegStr HKLM "${KEY}" "Publisher" "King Alex Gilbert"
  WriteRegStr HKLM "${KEY}" "DisplayIcon" "$INSTDIR\KingPanel.exe,0"
  WriteRegStr HKLM "${KEY}" "InstallLocation" "$INSTDIR"

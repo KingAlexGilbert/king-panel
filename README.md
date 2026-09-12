@@ -9,7 +9,7 @@ and follows the Windows app theme.
 
 ## Install
 
-Download `KingPanel-Setup-0.9.7.exe` from this repository's Releases page.
+Download `KingPanel-Setup-1.0.0.exe` from this repository's Releases page.
 Setup installs to `Program Files\King Panel` and offers optional startup,
 desktop, and Start menu shortcuts. These options apply to all users.
 Setup and uninstall require administrator approval; the app does not request it.
@@ -33,12 +33,12 @@ The script finds installed tools or accepts full paths through `ZIG_EXE` and
 
 ## First release
 
-This package uses version **0.9.7**, matching the supplied release binaries.
-The `dist` folder contains the supplied EXEs and SHA-256 checksums for manual
+This package uses version **1.0.0**, with freshly rebuilt release binaries.
+The `dist` folder contains the rebuilt EXEs and SHA-256 checksums for manual
 release upload. It is ignored by Git; commit the source and repository files.
 
 The existing Release workflow builds and publishes binaries when you push a
-matching version tag, **`v0.9.7`**. See [RELEASING.md](RELEASING.md) for steps.
+matching version tag, **`v1.0.0`**. See [RELEASING.md](RELEASING.md) for steps.
 
 ## License
 
