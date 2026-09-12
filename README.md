@@ -10,8 +10,8 @@ King Panel supports:
 - Multi-Monitor Support
 - HDR Toggle
   
-It lives in your task bar, making it extremely easy to use, **the crown controls all**. 
-Left click: it brings up a simple menu to change refresh rate, 
+It lives in your system tray, making it extremely easy to use, **the crown controls all**. 
+Left click: it brings up a simple menu to change refresh rate.
 Right click: it brings up an in-depth menu where you can change your refresh rate, resolution, display scaling, HDR, and settings for multiple monitors.
 
 This was made to avoid the amount of menus Windows 11 makes you go through just to change your monitor settings, especially refresh-rate. 
@@ -27,7 +27,7 @@ Made by: **King Alex Gilbert**
 3. Run through the setup options; setup installs to `Program Files\King Panel`.
 4. The installer offers optional startup, desktop, and Start menu shortcuts for all users.
 5. Setup and uninstall require administrator approval; the app does not request it.
-6. King Panel should now show up in the taskbar tray.
+6. King Panel should now show up in the system tray.
 A portable `KingPanel.exe` is also available. Exit an existing copy before updating.
 
 Resolution and refresh-rate changes revert after 15 seconds unless you choose "Keep".
@@ -73,7 +73,7 @@ Copyright (C) 2026 King Alex Gilbert
 
 I want to give credit to the GitHub projects that helped inspire King Panel:
 
-- DisplayPal by @MorlachAU
-- windisplay by @zpix1
+- [RefreshRateSwitcher](https://github.com/Yeeyash/refresh-rate-switcher) by [@Yeeyash](https://github.com/Yeeyash)
+- [windisplay](https://github.com/zpix1/windisplay) by [@zpix1](https://github.com/zpix1)
 
 Special thanks to their developers for sharing their work and helping inspire King Panel.
