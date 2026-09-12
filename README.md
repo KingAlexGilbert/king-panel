@@ -22,17 +22,24 @@ Made by: **King Alex Gilbert**
 
 ## Install
 
+### Recommended
 1. Download `KingPanel-Setup-1.0.0.exe` from this repository's Releases page.
 2. Double-click the exe.
 3. Run through the setup options; setup installs to `Program Files\King Panel`.
 4. The installer offers optional startup, desktop, and Start menu shortcuts for all users.
-5. Setup and uninstall require administrator approval; the app does not request it.
+5. Run King Panel from your chosen shortcut or file location.
 6. King Panel should now show up in the system tray.
+
+### Portable
+
 A portable `KingPanel.exe` is also available. Exit an existing copy before updating.
 
-Resolution and refresh-rate changes revert after 15 seconds unless you choose "Keep".
+1. Double-click the exe.
+2. King Panel should now show up in the system tray.
 
 ## Installation Note
+
+Resolution and refresh-rate changes revert after 15 seconds unless you choose "Keep".
 
 The Windows installer is currently unsigned, so Windows may show an unknown publisher or SmartScreen warning. This is normal for unsigned indie releases.
 
@@ -51,13 +58,6 @@ The script finds installed tools or accepts full paths through `ZIG_EXE` and
 `NSIS_EXE`. It does not download tools. Output files appear in the project root.
 
 ## Privacy
-
-This package uses version **1.0.0**, with freshly rebuilt release binaries.
-The `dist` folder contains the rebuilt EXEs and SHA-256 checksums for manual
-release upload. It is ignored by Git; commit the source and repository files.
-
-The existing Release workflow builds and publishes binaries when you push a
-matching version tag, **`v1.0.0`**. See [RELEASING.md](RELEASING.md) for steps.
 
 King Panel is local-first. Your display information and settings are processed locally and are not sent to external servers.
 
