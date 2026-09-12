@@ -73,7 +73,7 @@ Copyright (C) 2026 King Alex Gilbert
 
 I want to give credit to the GitHub projects that helped inspire King Panel:
 
-- DisplayPal by @MorlachAU
+- RefreshRateSwitcher by @Yeeyash
 - windisplay by @zpix1
 
 Special thanks to their developers for sharing their work and helping inspire King Panel.
