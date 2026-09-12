@@ -1,4 +1,8 @@
-# King Panel
+<p align="center">
+  <img src="docs/images/crown.ico" width="128" alt="King Panel app icon">
+</p>
+
+<h1 align="center">King Panel</h1>
 
 King Panel is an extremely lightweight refresh-rate and resolution modifier for Windows. 
 When running at idle, King Panel uses virtually no CPU or GPU resources and only consumes about 1.2MB of RAM.
