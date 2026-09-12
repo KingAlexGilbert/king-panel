@@ -20,6 +20,20 @@ King Panel was made with AI-assisted coding.
 
 Made by: **King Alex Gilbert**
 
+## Screenshots
+
+### King Panel in System Tray
+
+![System Tray](screenshots/system-tray.png)
+
+### Menu: Right Click
+
+![Menu: Right Click](screenshots/king-panel-menu.png)
+
+### Menu: Left Click
+
+![Menu: Left Click](screenshots/left-click.png)
+
 ## Install
 
 ### Recommended
