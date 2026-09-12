@@ -11,7 +11,7 @@ King Panel supports:
 - HDR Toggle
   
 It lives in your task bar, making it extremely easy to use, **the crown controls all**. 
-Left click: it brings up a simple menu to change refresh rate, 
+Left click: it brings up a simple menu to change refresh rate.
 Right click: it brings up an in-depth menu where you can change your refresh rate, resolution, display scaling, HDR, and settings for multiple monitors.
 
 This was made to avoid the amount of menus Windows 11 makes you go through just to change your monitor settings, especially refresh-rate. 
