@@ -1,23 +1,41 @@
 # King Panel
 
-An extremely lightweight refresh-rate and resolution modifier for Windows.
+King Panel is an extremely lightweight refresh-rate and resolution modifier for Windows. 
+When running at idle, King Panel uses virtually no CPU or GPU resources and only consumes about 1.2MB of RAM.
 
-King Panel lives in the notification area. Left-click the crown for refresh rates
-at your current resolution; right-click for monitor resolutions, refresh rates,
-scaling, supported primary-display HDR, and Exit. It supports multiple monitors
-and follows the Windows app theme.
+King Panel supports:
+- Refresh rate
+- Resolution
+- Display Scaling
+- Multi-Monitor Support
+- HDR Toggle
+  
+It lives in your task bar, making it extremely easy to use, **the crown controls all**. 
+Left click: it brings up a simple menu to change refresh rate, 
+Right click: it brings up an in-depth menu where you can change your refresh rate, resolution, display scaling, HDR, and settings for multiple monitors.
+
+This was made to avoid the amount of menus Windows 11 makes you go through just to change your monitor settings, especially refresh-rate. 
+
+King Panel was made with AI-assisted coding.
+
+Made by: **King Alex Gilbert**
 
 ## Install
 
-Download `KingPanel-Setup-0.9.7.exe` from this repository's Releases page.
-Setup installs to `Program Files\King Panel` and offers optional startup,
-desktop, and Start menu shortcuts. These options apply to all users.
-Setup and uninstall require administrator approval; the app does not request it.
+1. Download `KingPanel-Setup.exe` from this repository's Releases page.
+2. Double-click the exe.
+3. Run through the setup options, setup installs to `Program Files\King Panel`
+4. King Panel should now show up in the taskbar tray.
+
 A portable `KingPanel.exe` is also available. Exit an existing copy before updating.
 
-Resolution and refresh-rate changes revert after 15 seconds unless you choose Keep.
-Executables are unsigned. Submenus open upward, but can briefly appear in Windows'
-initial position before moving. Scaling support depends on the Windows display driver.
+Resolution and refresh-rate changes revert after 15 seconds unless you choose "Keep".
+
+## Installation Note
+
+The Windows installer is currently unsigned, so Windows may show an unknown publisher or SmartScreen warning. This is normal for unsigned indie releases.
+
+If you trust this official GitHub release, choose **More info → Run anyway** if SmartScreen appears.
 
 ## Build
 
@@ -31,15 +49,23 @@ build.cmd installer
 The script finds installed tools or accepts full paths through `ZIG_EXE` and
 `NSIS_EXE`. It does not download tools. Output files appear in the project root.
 
-## First release
+## Privacy
 
-This package uses version **0.9.7**, matching the supplied release binaries.
-The `dist` folder contains the supplied EXEs and SHA-256 checksums for manual
-release upload. It is ignored by Git; commit the source and repository files.
-
-The existing Release workflow builds and publishes binaries when you push a
-matching version tag, **`v0.9.7`**. See [RELEASING.md](RELEASING.md) for steps.
+King Panel is local-first. Your display information and settings are processed locally and are not sent to external servers.
 
 ## License
 
-See [LICENSE](LICENSE).
+This project is released under the GNU General Public License v3.0.
+
+Distributed modified versions must follow the terms of the GPLv3. See the `LICENSE` file for the complete license terms.
+
+Copyright (C) 2026 King Alex Gilbert
+
+## References
+
+I want to give credit to the GitHub projects that helped inspire King Panel:
+
+- DisplayPal by @MorlachAU
+- windisplay by @zpix1
+
+Special thanks to their developers for sharing their work and helping inspire King Panel.
