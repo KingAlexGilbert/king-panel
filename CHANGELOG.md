@@ -2,6 +2,11 @@
 
 All notable changes to King Panel are documented here.
 
+## [1.0.1]
+
+- Anchor tray menus to the notification icon and exclude the reserved taskbar area.
+- Temporarily show the zero-sized menu owner and give it topmost/foreground
+
 ## [1.0.0] - Initial release
 
 King Panel is an extremely lightweight refresh-rate and resolution modifier for Windows.

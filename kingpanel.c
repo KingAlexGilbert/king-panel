@@ -764,6 +764,44 @@ static void CALLBACK popupOpened(HWINEVENTHOOK hook, DWORD event, HWND w,
     RedrawWindow(w, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_UPDATENOW);
     positioningPopup = FALSE;
 }
+// Use the notification icon's screen rectangle, including keyboard invocation.
+// Keep the root menu away from the reserved taskbar strip before first display.
+static UINT menuAnchor(POINT *point, TPMPARAMS *params) {
+    NOTIFYICONIDENTIFIER icon = {0}; icon.cbSize = sizeof(icon);
+    icon.hWnd = owner; icon.uID = tray.uID; icon.guidItem = kingPanelTrayGuid;
+    RECT iconRect;
+    BOOL located = SUCCEEDED(Shell_NotifyIconGetRect(&icon, &iconRect));
+    if (located) {
+        point->x = iconRect.left + (iconRect.right-iconRect.left)/2;
+        point->y = iconRect.top;
+        params->rcExclude = iconRect;
+    }
+    UINT alignment = TPM_BOTTOMALIGN;
+    MONITORINFO monitor = {0}; monitor.cbSize = sizeof(monitor);
+    if (GetMonitorInfoW(MonitorFromPoint(*point, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        RECT work = monitor.rcWork, screen = monitor.rcMonitor;
+        POINT center = *point;
+        if (located) center.y = iconRect.top + (iconRect.bottom-iconRect.top)/2;
+        if (center.y >= work.bottom && work.bottom < screen.bottom) {
+            params->rcExclude = (RECT){screen.left,work.bottom,screen.right,screen.bottom};
+            point->y = work.bottom;
+        } else if (center.y < work.top && work.top > screen.top) {
+            params->rcExclude = (RECT){screen.left,screen.top,screen.right,work.top};
+            point->y = work.top; alignment = TPM_TOPALIGN;
+        } else if (center.x < work.left && work.left > screen.left) {
+            params->rcExclude = (RECT){screen.left,screen.top,work.left,screen.bottom};
+            point->x = work.left; alignment |= TPM_LEFTALIGN;
+        } else if (center.x >= work.right && work.right < screen.right) {
+            params->rcExclude = (RECT){work.right,screen.top,screen.right,screen.bottom};
+            point->x = work.right; alignment |= TPM_RIGHTALIGN;
+        }
+        if (point->x < work.left) point->x = work.left;
+        if (point->x > work.right) point->x = work.right;
+        if (point->y < work.top) point->y = work.top;
+        if (point->y > work.bottom) point->y = work.bottom;
+    }
+    return alignment;
+}
 static void showMenu(BOOL quick) {
     if (pending) { SetForegroundWindow(confirmation); return; }
     if (menuOpen) return;
@@ -902,15 +940,24 @@ static void showMenu(BOOL quick) {
         AppendMenuW(root, MF_GRAYED, 0, L"King Panel - King Alex Gilbert");
     }
     themeMenu(root);
+    TPMPARAMS placement = {0}; placement.cbSize = sizeof(placement);
+    UINT alignment = menuAnchor(&pt, &placement);
+    // A visible zero-sized tool window can take foreground ownership, without
+    // displaying content or adding a taskbar button. Topmost lasts only for the
+    // menu session, so its owned popup is not behind Explorer's taskbar.
+    SetWindowPos(owner, HWND_TOPMOST, pt.x, pt.y, 0, 0,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
     SetForegroundWindow(owner);
     positionedRoot = root;
     menuHook = SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART,
         NULL, popupOpened, GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT);
-    UINT id = TrackPopupMenu(root, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON |
-                            TPM_BOTTOMALIGN | TPM_NOANIMATION, pt.x, pt.y, 0, owner, NULL);
+    UINT id = TrackPopupMenuEx(root, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON |
+                              alignment | TPM_NOANIMATION, pt.x, pt.y, owner, &placement);
     positionedRoot = NULL;
     if (menuHook) { UnhookWinEvent(menuHook); menuHook = NULL; }
     PostMessageW(owner, WM_NULL, 0, 0);
+    SetWindowPos(owner, HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_HIDEWINDOW);
     DestroyMenu(root);
     releaseLabels();
     if (oldDpiContext) {

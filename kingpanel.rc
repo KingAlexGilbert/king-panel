@@ -1,8 +1,8 @@
 1 24 "kingpanel.manifest"
 1 ICON "crown.ico"
 1 VERSIONINFO
- FILEVERSION 1,0,0,0
- PRODUCTVERSION 1,0,0,0
+ FILEVERSION 1,0,1,0
+ PRODUCTVERSION 1,0,1,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -15,11 +15,11 @@ BEGIN
   BEGIN
    VALUE "CompanyName", "King Alex Gilbert\0"
    VALUE "FileDescription", "King Panel - Display Settings\0"
-   VALUE "FileVersion", "1.0.0\0"
+   VALUE "FileVersion", "1.0.1\0"
    VALUE "InternalName", "KingPanel\0"
    VALUE "OriginalFilename", "KingPanel.exe\0"
    VALUE "ProductName", "King Panel\0"
-   VALUE "ProductVersion", "1.0.0\0"
+   VALUE "ProductVersion", "1.0.1\0"
   END
  END
  BLOCK "VarFileInfo"
