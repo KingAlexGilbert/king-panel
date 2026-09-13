@@ -2,10 +2,9 @@
 
 All notable changes to King Panel are documented here.
 
-## [1.0.1]
+## [1.0.1] - Menu Fixes
 
-- Anchor tray menus to the notification icon and exclude the reserved taskbar area.
-- Temporarily show the zero-sized menu owner and give it topmost/foreground
+- Fixed King Panel's menus from hiding behind the taskbar.
 
 ## [1.0.0] - Initial release
 
