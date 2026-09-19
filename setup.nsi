@@ -3,7 +3,7 @@ Unicode true
 !include "LogicLib.nsh"
 !include "x64.nsh"
 Name "King Panel"
-OutFile "KingPanel-Setup-1.0.1.exe"
+OutFile "dist\KingPanel-Setup-1.0.1.exe"
 InstallDir "$PROGRAMFILES64\King Panel"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -93,7 +93,7 @@ Section "King Panel application (required)" SEC_APP
  ClearErrors
  SetOutPath "$INSTDIR"
  SetOverwrite on
- File "KingPanel.exe"
+ File "dist\KingPanel.exe"
  WriteUninstaller "$INSTDIR\Uninstall.exe"
  IfErrors 0 +3
   MessageBox MB_OK|MB_ICONSTOP "Could not write the uninstaller. Please rerun Setup."

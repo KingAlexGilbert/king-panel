@@ -33,3 +33,6 @@ out/
 # Windows metadata
 Thumbs.db
 Desktop.ini
+
+lib/
+zig.exe

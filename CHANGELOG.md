@@ -2,10 +2,15 @@
 
 All notable changes to King Panel are documented here.
 
-## [1.0.1]
+## [1.0.1] - Menu Fixes
+- Split Windows builds into independent `build-portable.cmd` and `build-installer.cmd` scripts so portable builds require only Zig and installer packaging requires only NSIS plus an existing `KingPanel.exe`.
+- Store both generated binaries in `dist/` so build outputs stay out of the repository root.
 
-- Anchor tray menus to the notification icon and exclude the reserved taskbar area.
-- Temporarily show the zero-sized menu owner and give it topmost/foreground
+- Fixed King Panel's menus from hiding behind the taskbar.
+- Active monitors are numbered sequentially in King Panel instead of exposing sparse Windows GDI display IDs.
+- Scaled the keep/revert display confirmation window correctly on high-DPI and 4K displays.
+- Switched King Panel to Per-Monitor V2 DPI awareness so hover highlights and click hitboxes stay aligned after changing display scaling.
+- Fixed display options sometimes requiring a second click after a previous change by no longer discarding selections when delayed Windows display/settings notifications arrive. Open menus are only closed for an actual DPI transition that would invalidate their geometry.
 
 ## [1.0.0] - Initial release
 

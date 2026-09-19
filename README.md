@@ -65,15 +65,29 @@ If you trust this official GitHub release, choose **More info → Run anyway** i
 
 ## Build
 
-Install Zig 0.13.0 outside this folder. To build the installer, also install NSIS 3.
+King Panel has separate build scripts so you do not need both build tools installed on the same PC.
+
+### Portable app
+
+Install Zig 0.13.0, then double-click:
 
 ```bat
-build.cmd app
-build.cmd installer
+build-portable.cmd
 ```
 
-The script finds installed tools or accepts full paths through `ZIG_EXE` and
-`NSIS_EXE`. It does not download tools. Output files appear in the project root.
+This creates `dist\KingPanel.exe` and does **not** require NSIS.
+
+### Installer
+
+Install NSIS 3 and place an already-built `KingPanel.exe` in the `dist` folder, then double-click:
+
+```bat
+build-installer.cmd
+```
+
+This creates `dist\KingPanel-Setup-1.0.1.exe` and does **not** require Zig. The installer script packages the existing `dist\KingPanel.exe`; it does not rebuild it.
+
+Both scripts search PATH and common Windows install locations. You may also provide explicit tool paths through `ZIG_EXE` or `NSIS_EXE`. Pass `nopause` when using either script in CI or automation. Both generated files appear in the `dist` folder.
 
 ## Privacy
 

@@ -49,10 +49,10 @@ static UINT taskbarCreated;
 static const GUID kingPanelTrayGuid = {
     0x2b39554d, 0x54a0, 0x4b67, {0xa7, 0x27, 0x52, 0x42, 0x77, 0x16, 0x9d, 0xe1}
 };
-static BOOL pending, menuOpen, menuInvalidated;
+static BOOL pending, menuOpen;
 static Choice previous, requested;
 static ULONGLONG deadline;
-static HFONT font;
+static HFONT font, confirmFont;
 
 // HDR control uses Windows Display Configuration (CCD) and is resolved against
 // the current Windows primary display each time. Newer Windows 11 builds expose
@@ -140,12 +140,15 @@ static HBRUSH darkBrush;
 static HFONT menuFont;
 static int dpi = 96;
 static int px(int value) { return MulDiv(value, dpi, 96); }
-// Opt into per-monitor-v2 while constructing/showing menus so custom menu
-// geometry uses the target monitor DPI. Confirmation windows retain their DPI
-// behavior. All APIs are resolved from the already-loaded system user32 module.
+// Keep custom menu geometry tied to the DPI of the monitor where the tray menu
+// opens. The process itself is Per-Monitor-V2 on supported Windows builds; the
+// thread override also preserves a safe fallback path for older systems. All DPI
+// APIs are resolved from the already-loaded system user32 module.
+typedef BOOL (WINAPI *SetProcessDpiContextFn)(HANDLE);
 typedef HANDLE (WINAPI *SetThreadDpiContextFn)(HANDLE);
 typedef UINT (WINAPI *GetWindowDpiFn)(HWND);
 typedef BOOL (WINAPI *SystemMetricsForDpiFn)(UINT, UINT, PVOID, UINT, UINT);
+static SetProcessDpiContextFn setProcessDpiContext;
 static SetThreadDpiContextFn setThreadDpiContext;
 static GetWindowDpiFn getWindowDpi;
 static SystemMetricsForDpiFn systemMetricsForDpi;
@@ -153,8 +156,8 @@ static HANDLE beginMenuDpi(POINT pt) {
     HANDLE oldContext = NULL;
     if (setThreadDpiContext) oldContext = setThreadDpiContext((HANDLE)(INT_PTR)-4);
     if (!oldContext) return NULL; // Older Windows retains system-DPI behavior.
-    // An invisible, short-lived window supplies the actual DPI at the tray menu.
-    // The owner window is system-aware and cannot supply per-monitor DPI itself.
+    // An invisible, short-lived window supplies the actual DPI at the tray menu
+    // position, which may differ from the hidden owner window's current monitor.
     HWND probe = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"",
         WS_POPUP, pt.x, pt.y, 1, 1, NULL, NULL, GetModuleHandleW(NULL), NULL);
     UINT targetDpi = probe && getWindowDpi ? getWindowDpi(probe) : 0;
@@ -284,7 +287,8 @@ static BOOL drawButton(DRAWITEMSTRUCT *d) {
     } else DrawFrameControl(d->hDC, &r, DFC_BUTTON, DFCS_BUTTONPUSH |
                            ((d->itemState & ODS_SELECTED) ? DFCS_PUSHED : 0));
     WCHAR text[64]; GetWindowTextW(d->hwndItem, text, 64);
-    SelectObject(d->hDC, font); SetBkMode(d->hDC, TRANSPARENT);
+    HFONT buttonFont = (HFONT)SendMessageW(d->hwndItem, WM_GETFONT, 0, 0);
+    SelectObject(d->hDC, buttonFont ? buttonFont : font); SetBkMode(d->hDC, TRANSPARENT);
     SetTextColor(d->hDC, dark ? RGB(240,240,240) : GetSysColor(COLOR_BTNTEXT));
     DrawTextW(d->hDC, text, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     if ((d->itemState & ODS_FOCUS) && !(d->itemState & ODS_NOFOCUSRECT)) {
@@ -618,12 +622,63 @@ static void togglePrimaryHdr(void) {
     if (!setPrimaryHdr(&target, !target.enabled, &status))
         error(L"Windows could not change HDR on the current primary display.", status);
 }
+static UINT confirmationDpi(HWND w) {
+    UINT value = getWindowDpi && w ? getWindowDpi(w) : 0;
+    return value ? value : (UINT)(dpi > 0 ? dpi : 96);
+}
+static int confirmPx(int logical, UINT windowDpi) {
+    return MulDiv(logical, (int)windowDpi, 96);
+}
+static void updateConfirmationFont(HWND w, UINT windowDpi) {
+    NONCLIENTMETRICSW metrics = {0}; metrics.cbSize = sizeof(metrics);
+    BOOL gotMetrics = systemMetricsForDpi &&
+        systemMetricsForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, windowDpi);
+    if (!gotMetrics) {
+        if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0)) return;
+        metrics.lfMessageFont.lfHeight = MulDiv(metrics.lfMessageFont.lfHeight, (int)windowDpi, dpi > 0 ? dpi : 96);
+    }
+    HFONT replacement = CreateFontIndirectW(&metrics.lfMessageFont);
+    if (!replacement) return;
+    if (confirmFont) DeleteObject(confirmFont);
+    confirmFont = replacement;
+    HWND text = GetDlgItem(w, 60004);
+    HWND keep = GetDlgItem(w, ID_KEEP);
+    HWND revert = GetDlgItem(w, ID_REVERT);
+    if (text) SendMessageW(text, WM_SETFONT, (WPARAM)confirmFont, TRUE);
+    if (keep) SendMessageW(keep, WM_SETFONT, (WPARAM)confirmFont, TRUE);
+    if (revert) SendMessageW(revert, WM_SETFONT, (WPARAM)confirmFont, TRUE);
+}
+static void layoutConfirmation(HWND w, UINT windowDpi, BOOL resizeWindow) {
+    if (!w) return;
+    if (resizeWindow) {
+        HMONITOR monitor = MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO info = {0}; info.cbSize = sizeof(info);
+        if (GetMonitorInfoW(monitor, &info)) {
+            int width = confirmPx(380, windowDpi);
+            int height = confirmPx(165, windowDpi);
+            int x = info.rcWork.left + (info.rcWork.right - info.rcWork.left - width) / 2;
+            int y = info.rcWork.top + (info.rcWork.bottom - info.rcWork.top - height) / 2;
+            SetWindowPos(w, NULL, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+    HWND text = GetDlgItem(w, 60004);
+    HWND keep = GetDlgItem(w, ID_KEEP);
+    HWND revert = GetDlgItem(w, ID_REVERT);
+    if (text) MoveWindow(text, confirmPx(18, windowDpi), confirmPx(15, windowDpi),
+                         confirmPx(340, windowDpi), confirmPx(48, windowDpi), TRUE);
+    if (keep) MoveWindow(keep, confirmPx(145, windowDpi), confirmPx(80, windowDpi),
+                         confirmPx(90, windowDpi), confirmPx(28, windowDpi), TRUE);
+    if (revert) MoveWindow(revert, confirmPx(245, windowDpi), confirmPx(80, windowDpi),
+                           confirmPx(90, windowDpi), confirmPx(28, windowDpi), TRUE);
+    updateConfirmationFont(w, windowDpi);
+}
 static void finish(BOOL keep) {
     if (!pending) return;
     pending = FALSE;
     HWND old = confirmation;
     confirmation = NULL;
     if (old) { KillTimer(old, 1); DestroyWindow(old); }
+    if (confirmFont) { DeleteObject(confirmFont); confirmFont = NULL; }
     LONG result;
     if (keep) {
         // Persist only after explicit confirmation. Preserve current desktop position.
@@ -671,6 +726,14 @@ static LRESULT CALLBACK confirmProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         else if (LOWORD(wp) == ID_REVERT || LOWORD(wp) == IDCANCEL) finish(FALSE);
         return 0;
     case WM_TIMER: updateCountdown(); return 0;
+    case WM_DPICHANGED: {
+        RECT *suggested = (RECT *)lp;
+        SetWindowPos(w, NULL, suggested->left, suggested->top,
+                     suggested->right - suggested->left, suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        layoutConfirmation(w, HIWORD(wp), FALSE);
+        return 0;
+    }
     case WM_CLOSE: finish(FALSE); return 0;
     }
     return DefWindowProcW(w, msg, wp, lp);
@@ -701,20 +764,26 @@ static void applyChoice(Choice selected, BOOL quick) {
     if (result != DISP_CHANGE_SUCCESSFUL) { error(L"Windows could not apply this display mode.", result); return; }
     pending = TRUE;
     deadline = GetTickCount64() + 15000;
-    RECT area; SystemParametersInfoW(SPI_GETWORKAREA, 0, &area, 0);
+    POINT target = {
+        requested.mode.dmPosition.x + (LONG)requested.mode.dmPelsWidth / 2,
+        requested.mode.dmPosition.y + (LONG)requested.mode.dmPelsHeight / 2
+    };
+    HMONITOR targetMonitor = MonitorFromPoint(target, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitorInfo = {0}; monitorInfo.cbSize = sizeof(monitorInfo);
+    RECT area = {0, 0, 380, 165};
+    if (GetMonitorInfoW(targetMonitor, &monitorInfo)) area = monitorInfo.rcWork;
     confirmation = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"DisplayTrayConfirm", APP,
         WS_CAPTION | WS_SYSMENU, area.left + (area.right-area.left-380)/2,
         area.top + (area.bottom-area.top-165)/2, 380, 165, owner, NULL, GetModuleHandleW(NULL), NULL);
     if (!confirmation) { finish(FALSE); return; }
-    countdown = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 18, 15, 340, 48, confirmation, NULL, NULL, NULL);
+    countdown = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 18, 15, 340, 48,
+        confirmation, (HMENU)(INT_PTR)60004, NULL, NULL);
     HWND keep = CreateWindowW(L"BUTTON", L"Keep", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         145, 80, 90, 28, confirmation, (HMENU)(INT_PTR)ID_KEEP, NULL, NULL);
     HWND revert = CreateWindowW(L"BUTTON", L"Revert", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         245, 80, 90, 28, confirmation, (HMENU)(INT_PTR)ID_REVERT, NULL, NULL);
     if (!countdown || !keep || !revert || !SetTimer(confirmation, 1, 250, NULL)) { finish(FALSE); return; }
-    SendMessageW(countdown, WM_SETFONT, (WPARAM)font, TRUE);
-    SendMessageW(keep, WM_SETFONT, (WPARAM)font, TRUE);
-    SendMessageW(revert, WM_SETFONT, (WPARAM)font, TRUE);
+    layoutConfirmation(confirmation, confirmationDpi(confirmation), TRUE);
     updateTheme();
     updateCountdown();
     ShowWindow(confirmation, SW_SHOW); SetForegroundWindow(confirmation); SetFocus(revert);
@@ -813,18 +882,17 @@ static void showMenu(BOOL quick) {
     HANDLE oldDpiContext = beginMenuDpi(pt);
     if (!oldDpiContext) menuFont = savedMenuFont;
     updateTheme();
-    menuOpen = TRUE;
-    menuInvalidated = FALSE;
     HMENU root = CreatePopupMenu();
     if (!root) {
         if (oldDpiContext) {
             DeleteObject(menuFont); menuFont = savedMenuFont; dpi = savedDpi;
             setThreadDpiContext(oldDpiContext);
         }
-        menuOpen = FALSE; return;
+        return;
     }
     count = 0;
     scaleCount = 0;
+    DWORD visibleDisplay = 0;
     for (DWORD d = 0; d < 256; ++d) {
         DISPLAY_DEVICEW device = {0}; device.cb = sizeof(device);
         if (!EnumDisplayDevicesW(NULL, d, &device, 0)) break;
@@ -892,13 +960,11 @@ static void showMenu(BOOL quick) {
             else
                 lstrcpynW(monitorName, L"Monitor", 256);
         }
-        // Use the Windows display number in the label, keeping the device path for API calls.
+        // Present active monitors sequentially. Windows can retain sparse internal
+        // GDI names (for example, the only connected monitor can be \\.\DISPLAY2),
+        // but that implementation detail should not leak into King Panel's UI.
         WCHAR displayLabel[64];
-        const WCHAR *displayNumber = wcsstr(device.DeviceName, L"DISPLAY");
-        if (displayNumber && displayNumber[7] >= L'0' && displayNumber[7] <= L'9')
-            safeFormat(displayLabel, 64, L"Display %ls", displayNumber + 7);
-        else
-            safeFormat(displayLabel, 64, L"Display %lu", (unsigned long)d + 1);
+        safeFormat(displayLabel, 64, L"Display %lu", (unsigned long)visibleDisplay + 1);
         safeFormat(label, 256, L"%ls - %ls%ls", displayLabel, monitorName,
             (device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) ? L" (primary)" : L"");
         if (quick) {
@@ -906,6 +972,7 @@ static void showMenu(BOOL quick) {
             safeFormat(label+used, 256-used, L" - %lu x %lu", (unsigned long)live.dmPelsWidth, (unsigned long)live.dmPelsHeight);
         }
         if (!AppendMenuW(root, MF_POPUP, (UINT_PTR)monitor, label)) DestroyMenu(monitor);
+        else ++visibleDisplay;
     }
     if (!GetMenuItemCount(root)) AppendMenuW(root, MF_GRAYED, 0, L"No active monitors found");
     if (quick && GetMenuItemCount(root) == 1 && GetSubMenu(root, 0)) {
@@ -951,8 +1018,10 @@ static void showMenu(BOOL quick) {
     positionedRoot = root;
     menuHook = SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART,
         NULL, popupOpened, GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT);
+    menuOpen = TRUE;
     UINT id = TrackPopupMenuEx(root, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON |
                               alignment | TPM_NOANIMATION, pt.x, pt.y, owner, &placement);
+    menuOpen = FALSE;
     positionedRoot = NULL;
     if (menuHook) { UnhookWinEvent(menuHook); menuHook = NULL; }
     PostMessageW(owner, WM_NULL, 0, 0);
@@ -964,7 +1033,6 @@ static void showMenu(BOOL quick) {
         DeleteObject(menuFont); menuFont = savedMenuFont; dpi = savedDpi;
         setThreadDpiContext(oldDpiContext);
     }
-    if (menuInvalidated) id = 0;
     Choice selected = {0};
     ScaleChoice scaleSelected = {0}; BOOL hasScaleChoice = FALSE;
     if (id > 0 && id <= count) {
@@ -982,7 +1050,6 @@ static void showMenu(BOOL quick) {
     }
     free(choices); choices = NULL; count = capacity = 0;
     free(scaleChoices); scaleChoices = NULL; scaleCount = scaleCapacity = 0;
-    menuOpen = FALSE;
     if (id == ID_EXIT) DestroyWindow(owner);
     else if (id == ID_HDR) togglePrimaryHdr();
     else if (hasScaleChoice) {
@@ -1006,12 +1073,22 @@ static LRESULT CALLBACK windowProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DRAWITEM: if (drawMenu((DRAWITEMSTRUCT *)lp)) return TRUE; break;
     case WM_DISPLAYCHANGE:
     case WM_DEVICECHANGE:
-        if (menuOpen) { menuInvalidated = TRUE; EndMenu(); }
+        // These notifications can arrive after a display change has already been
+        // confirmed. The next popup is always rebuilt from live Windows state, so
+        // do not cancel a fresh menu and accidentally discard the user's click.
+        return 0;
+    case WM_DPICHANGED:
+        // Only end an in-flight popup if Windows is actually moving this owner
+        // window to a different DPI than the menu was laid out for. Moving the
+        // hidden owner onto the tray monitor can itself generate WM_DPICHANGED;
+        // when the DPI already matches, the current menu geometry remains valid.
+        if (menuOpen && HIWORD(wp) != (UINT)dpi) EndMenu();
         return 0;
     case WM_SETTINGCHANGE:
     case WM_THEMECHANGED:
     case WM_SYSCOLORCHANGE:
-        if (menuOpen) { menuInvalidated = TRUE; EndMenu(); }
+        // Theme/settings notifications may also be delayed. Repaint with the new
+        // theme state, but let a valid menu selection complete normally.
         updateTheme(); return 0;
     case WM_QUERYENDSESSION: finish(FALSE); return TRUE;
     case WM_CLOSE: finish(FALSE); DestroyWindow(w); return 0;
@@ -1024,8 +1101,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE unused, LPSTR command, int show
     HANDLE mutex = CreateMutexW(NULL, FALSE, L"Local\\DisplayTray-94BE521E");
     if (!mutex) return 1;
     if (GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(mutex); return 0; }
-    SetProcessDPIAware();
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    setProcessDpiContext = (SetProcessDpiContextFn)(void *)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+    // Keep every King Panel HWND and its native popup menus in the same per-monitor
+    // DPI coordinate space. This avoids hover/click hit-box drift after scaling changes.
+    if (!setProcessDpiContext || !setProcessDpiContext((HANDLE)(INT_PTR)-4))
+        SetProcessDPIAware();
     setThreadDpiContext = (SetThreadDpiContextFn)(void *)GetProcAddress(user32, "SetThreadDpiAwarenessContext");
     getWindowDpi = (GetWindowDpiFn)(void *)GetProcAddress(user32, "GetDpiForWindow");
     systemMetricsForDpi = (SystemMetricsForDpiFn)(void *)GetProcAddress(user32, "SystemParametersInfoForDpi");
