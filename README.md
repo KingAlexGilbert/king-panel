@@ -67,13 +67,8 @@ If you trust this official GitHub release, choose **More info → Run anyway** i
 
 Install Zig 0.13.0 outside this folder. To build the installer, also install NSIS 3.
 
-```bat
-build.cmd app
-build.cmd installer
-```
-
-The script finds installed tools or accepts full paths through `ZIG_EXE` and
-`NSIS_EXE`. It does not download tools. Output files appear in the project root.
+Then, run the `build.cmd` file to make both the portable and installer.
+The output will be put in the `dist` folder.
 
 ## Privacy
 
