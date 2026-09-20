@@ -83,9 +83,11 @@ Keep all four build files in the repository root, alongside the shared `kingpane
 | `build-portable-arm64.cmd` | ARM64 portable app | `KingPanel-arm64.exe` |
 | `build-installer-arm64.cmd` | ARM64 installer | `KingPanel-Setup-1.0.1-arm64.exe` |
 
-Each architecture uses the same application source, resources, and installer definition. Generated EXEs stay in `dist` and are uploaded to GitHub Releases. The existing `assets`, `docs`, and `screenshots` folders keep their current locations.
+Each architecture uses the same application source, resources, and installer definition.
 
 The ARM64 files select the architecture automatically and call their corresponding existing builder, keeping the build logic in one place. Portable compilation and installer packaging remain separate, so you do not need both build tools installed on the same PC.
+
+### x64
 
 **Portable app**
 
