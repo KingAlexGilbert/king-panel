@@ -44,8 +44,8 @@ Choose the build for your Windows PC:
 
 | PC architecture | Portable app | Installer |
 | --- | --- | --- |
-| x64 (Intel / AMD) | `KingPanel.exe` | `KingPanel-Setup-1.0.1.exe` |
-| ARM64 (Windows on ARM, such as Snapdragon) | `KingPanel-arm64.exe` | `KingPanel-Setup-1.0.1-arm64.exe` |
+| x64 (Intel / AMD) | `KingPanel.exe` | `KingPanel-Setup.exe` |
+| ARM64 (Windows on ARM, such as Snapdragon) | `KingPanel-arm64.exe` | `KingPanel-Setup-arm64.exe` |
 
 The ARM64 app runs natively on Windows on ARM. Both versions use the same application source and features.
 
@@ -79,9 +79,9 @@ Keep all four build files in the repository root, alongside the shared `kingpane
 | Double-click this file | Builds | Output in `dist` |
 | --- | --- | --- |
 | `build-portable.cmd` | x64 portable app | `KingPanel.exe` |
-| `build-installer.cmd` | x64 installer | `KingPanel-Setup-1.0.1.exe` |
+| `build-installer.cmd` | x64 installer | `KingPanel-Setup.exe` |
 | `build-portable-arm64.cmd` | ARM64 portable app | `KingPanel-arm64.exe` |
-| `build-installer-arm64.cmd` | ARM64 installer | `KingPanel-Setup-1.0.1-arm64.exe` |
+| `build-installer-arm64.cmd` | ARM64 installer | `KingPanel-Setup-arm64.exe` |
 
 Each architecture uses the same application source, resources, and installer definition.
 
