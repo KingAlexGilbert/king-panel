@@ -2,19 +2,27 @@ Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+
+; Release version. For future releases, change only this default value.
+; It can also be overridden at build time with /DAPP_VERSION=x.y.z.
+!ifndef APP_VERSION
+ !define APP_VERSION "1.0.2"
+!endif
+!define APP_VERSION_QUAD "${APP_VERSION}.0"
+
 ; Keep the existing x64 filenames; ARM64 uses the same script and install path.
 !ifndef TARGET_ARCH
  !define TARGET_ARCH "x64"
 !endif
 !if "${TARGET_ARCH}" == "x64"
  !define APP_EXE "dist\KingPanel.exe"
- !define SETUP_EXE "dist\KingPanel-Setup-1.0.1.exe"
+ !define SETUP_EXE "dist\KingPanel-Setup-${APP_VERSION}.exe"
 !else if "${TARGET_ARCH}" == "arm64"
  !ifndef IsNativeARM64
   !error "ARM64 packaging requires NSIS 3.08 or newer."
  !endif
  !define APP_EXE "dist\KingPanel-arm64.exe"
- !define SETUP_EXE "dist\KingPanel-Setup-1.0.1-arm64.exe"
+ !define SETUP_EXE "dist\KingPanel-Setup-${APP_VERSION}-arm64.exe"
 !else
  !error "TARGET_ARCH must be x64 or arm64."
 !endif
@@ -25,11 +33,11 @@ RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 SetDatablockOptimize on
 BrandingText "King Panel - King Alex Gilbert"
-VIProductVersion "1.0.1.0"
+VIProductVersion "${APP_VERSION_QUAD}"
 VIAddVersionKey /LANG=1033 "ProductName" "King Panel Setup"
 VIAddVersionKey /LANG=1033 "CompanyName" "King Alex Gilbert"
 VIAddVersionKey /LANG=1033 "FileDescription" "King Panel Installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "1.0.1"
+VIAddVersionKey /LANG=1033 "FileVersion" "${APP_VERSION}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "King Alex Gilbert"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\KingPanel"
 !define RUNKEY "Software\Microsoft\Windows\CurrentVersion\Run"
@@ -122,7 +130,7 @@ Section "King Panel application (required)" SEC_APP
   MessageBox MB_OK|MB_ICONSTOP "Could not write the uninstaller. Please rerun Setup."
   Abort
  WriteRegStr HKLM "${KEY}" "DisplayName" "King Panel"
- WriteRegStr HKLM "${KEY}" "DisplayVersion" "1.0.1"
+ WriteRegStr HKLM "${KEY}" "DisplayVersion" "${APP_VERSION}"
  WriteRegStr HKLM "${KEY}" "Publisher" "King Alex Gilbert"
  WriteRegStr HKLM "${KEY}" "DisplayIcon" "$INSTDIR\KingPanel.exe,0"
  WriteRegStr HKLM "${KEY}" "InstallLocation" "$INSTDIR"
