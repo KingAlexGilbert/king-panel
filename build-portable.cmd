@@ -7,16 +7,42 @@ rem King Panel v1.0.1 portable build
 rem Requires: Zig 0.13.0
 rem Does NOT require NSIS.
 rem
-rem Double-click this file to build dist\KingPanel.exe.
+rem Double-click this file to build dist\KingPanel.exe for x64.
+rem Double-click build-portable-arm64.cmd for the ARM64 version.
 rem Pass "nopause" when running in CI/automation.
 rem ================================================================
 
+set "TARGET_ARCH=x64"
 set "PAUSE_AT_END=1"
-if /I "%~1"=="nopause" set "PAUSE_AT_END=0"
+
+:parse_args
+if "%~1"=="" goto args_done
+if /I "%~1"=="nopause" (
+    set "PAUSE_AT_END=0"
+) else if /I "%~1"=="x64" (
+    set "TARGET_ARCH=x64"
+) else if /I "%~1"=="arm64" (
+    set "TARGET_ARCH=arm64"
+) else (
+    echo ERROR: Unknown argument "%~1".
+    echo Usage: %~nx0 [x64^|arm64] [nopause]
+    exit /b 1
+)
+shift
+goto parse_args
+
+:args_done
+set "ZIG_TARGET=x86_64-windows-gnu"
+set "APP_NAME=KingPanel.exe"
+if "%TARGET_ARCH%"=="arm64" (
+    set "ZIG_TARGET=aarch64-windows-gnu"
+    set "APP_NAME=KingPanel-arm64.exe"
+)
+set "RESOURCE_FILE=dist\kingpanel-%TARGET_ARCH%.res"
 
 title King Panel - Portable Build v1.0.1
 echo ========================================
-echo   King Panel v1.0.1 Portable Build
+echo   King Panel v1.0.1 Portable Build [%TARGET_ARCH%]
 echo ========================================
 echo.
 
@@ -73,22 +99,22 @@ if errorlevel 1 (
 )
 
 echo [1/2] Compiling Windows resources...
-"%ZIG_EXE%" rc /fo kingpanel.res kingpanel.rc
+"%ZIG_EXE%" rc /fo "%RESOURCE_FILE%" kingpanel.rc
 if errorlevel 1 goto build_failed
 
-echo [2/2] Compiling portable KingPanel.exe...
-"%ZIG_EXE%" cc -target x86_64-windows-gnu -Oz -s -fstack-protector-strong -Wall -Wextra -Werror -Wl,--subsystem,windows kingpanel.c kingpanel.res -o dist\KingPanel.exe -luser32 -lshell32 -lgdi32 -ladvapi32 -ldwmapi -lsetupapi
+echo [2/2] Compiling portable %APP_NAME%...
+"%ZIG_EXE%" cc -target %ZIG_TARGET% -Oz -s -fstack-protector-strong -Wall -Wextra -Werror -Wl,--subsystem,windows kingpanel.c "%RESOURCE_FILE%" -o "dist\%APP_NAME%" -luser32 -lshell32 -lgdi32 -ladvapi32 -ldwmapi -lsetupapi
 if errorlevel 1 goto build_failed
 
-del /q kingpanel.res >nul 2>nul
+del /q "%RESOURCE_FILE%" >nul 2>nul
 set "BUILD_RESULT=0"
 echo.
 echo SUCCESS: Built portable app:
-echo   %CD%\dist\KingPanel.exe
+echo   %CD%\dist\%APP_NAME%
 goto finish
 
 :build_failed
-del /q kingpanel.res >nul 2>nul
+del /q "%RESOURCE_FILE%" >nul 2>nul
 set "BUILD_RESULT=1"
 echo.
 echo ERROR: King Panel failed to build. The compiler message above is the reason.

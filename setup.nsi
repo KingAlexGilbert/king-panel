@@ -2,8 +2,24 @@ Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+; Keep the existing x64 filenames; ARM64 uses the same script and install path.
+!ifndef TARGET_ARCH
+ !define TARGET_ARCH "x64"
+!endif
+!if "${TARGET_ARCH}" == "x64"
+ !define APP_EXE "dist\KingPanel.exe"
+ !define SETUP_EXE "dist\KingPanel-Setup-1.0.1.exe"
+!else if "${TARGET_ARCH}" == "arm64"
+ !ifndef IsNativeARM64
+  !error "ARM64 packaging requires NSIS 3.08 or newer."
+ !endif
+ !define APP_EXE "dist\KingPanel-arm64.exe"
+ !define SETUP_EXE "dist\KingPanel-Setup-1.0.1-arm64.exe"
+!else
+ !error "TARGET_ARCH must be x64 or arm64."
+!endif
 Name "King Panel"
-OutFile "dist\KingPanel-Setup-1.0.1.exe"
+OutFile "${SETUP_EXE}"
 InstallDir "$PROGRAMFILES64\King Panel"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -48,10 +64,17 @@ Var SetupMutex
 Function ${INITNAME}
  SetShellVarContext all
  SetRegView 64
- ${IfNot} ${RunningX64}
-  MessageBox MB_OK|MB_ICONSTOP "King Panel requires 64-bit Windows."
-  Abort
- ${EndIf}
+ !if "${TARGET_ARCH}" == "arm64"
+  ${IfNot} ${IsNativeARM64}
+   MessageBox MB_OK|MB_ICONSTOP "This version of King Panel requires Windows on ARM64. Use the x64 installer for an Intel or AMD PC."
+   Abort
+  ${EndIf}
+ !else
+  ${IfNot} ${RunningX64}
+   MessageBox MB_OK|MB_ICONSTOP "King Panel requires 64-bit Windows."
+   Abort
+  ${EndIf}
+ !endif
  System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Global\KingPanelSetup") p .r0 ?e'
  Pop $1
  StrCpy $SetupMutex $0
@@ -87,13 +110,13 @@ FunctionEnd
 Section "King Panel application (required)" SEC_APP
  SectionIn RO
  Call CheckClosed
- ; Fixed x64 machine-wide install target.
+ ; Fixed 64-bit machine-wide install target for either application architecture.
  StrCpy $INSTDIR "$PROGRAMFILES64\King Panel"
  Call CheckInstallPath
  ClearErrors
  SetOutPath "$INSTDIR"
  SetOverwrite on
- File "dist\KingPanel.exe"
+ File /oname=KingPanel.exe "${APP_EXE}"
  WriteUninstaller "$INSTDIR\Uninstall.exe"
  IfErrors 0 +3
   MessageBox MB_OK|MB_ICONSTOP "Could not write the uninstaller. Please rerun Setup."

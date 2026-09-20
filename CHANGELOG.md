@@ -2,6 +2,14 @@
 
 All notable changes to King Panel are documented here.
 
+## [Unreleased]
+
+- Added native Windows ARM64 app builds from the existing `kingpanel.c`, without duplicating source or moving repository files.
+- Added double-clickable `build-portable-arm64.cmd` and `build-installer-arm64.cmd` alongside the existing x64 builders. They select ARM64 automatically and reuse the existing build logic. Existing x64 commands and filenames remain unchanged; ARM64 files use an `-arm64` suffix in `dist/`.
+- Added executable-architecture validation before packaging and an ARM64-only OS check for the ARM64 installer. Both versions keep the same installation folder, shortcuts, and startup options.
+- Updated GitHub build and release workflows to produce both architectures and include all four EXEs in release checksums.
+- Documented ARM64 build and test steps and corrected the README release link to the King Panel repository.
+
 ## [1.0.1] - Menu Fixes
 - Split Windows builds into independent `build-portable.cmd` and `build-installer.cmd` scripts so portable builds require only Zig and installer packaging requires only NSIS plus an existing `KingPanel.exe`.
 - Store both generated binaries in `dist/` so build outputs stay out of the repository root.

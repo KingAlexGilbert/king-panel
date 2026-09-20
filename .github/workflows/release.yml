@@ -52,11 +52,17 @@ jobs:
           call build-portable.cmd nopause
           if errorlevel 1 exit /b 1
           call build-installer.cmd nopause
+          if errorlevel 1 exit /b 1
+          call build-portable-arm64.cmd nopause
+          if errorlevel 1 exit /b 1
+          call build-installer-arm64.cmd nopause
 
       - name: Create SHA-256 checksums
         shell: pwsh
         run: |
-          $files = @('dist/KingPanel.exe') + @(Get-ChildItem 'dist/KingPanel-Setup-*.exe' | ForEach-Object FullName)
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem 'dist/KingPanel*.exe' -File | Sort-Object Name | ForEach-Object FullName
+          if (@($files).Count -ne 4) { throw 'Expected x64 and ARM64 portable apps and installers.' }
           $lines = foreach ($file in $files) {
             $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $(Split-Path $file -Leaf)"
@@ -73,5 +79,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --title "King Panel $tag" --generate-notes
           }
-          $installer = Get-ChildItem 'dist/KingPanel-Setup-*.exe' | Select-Object -First 1 -ExpandProperty FullName
-          gh release upload $tag dist/KingPanel.exe $installer dist/SHA256SUMS.txt --clobber
+          $binaries = @(Get-ChildItem 'dist/KingPanel*.exe' -File | ForEach-Object FullName)
+          gh release upload $tag @binaries dist/SHA256SUMS.txt --clobber
