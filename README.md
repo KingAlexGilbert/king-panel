@@ -4,7 +4,7 @@
 
 <h1 align="center">King Panel</h1>
 
-King Panel is an extremely lightweight refresh-rate and resolution modifier for Windows. 
+King Panel is an extremely lightweight refresh-rate and resolution modifier for Windows and Windows ARM. 
 When running at idle, King Panel uses virtually no CPU or GPU resources and only consumes about 1.2MB of RAM.
 
 King Panel supports:
@@ -83,43 +83,45 @@ Keep all four build files in the repository root, alongside the shared `kingpane
 | `build-portable-arm64.cmd` | ARM64 portable app | `KingPanel-arm64.exe` |
 | `build-installer-arm64.cmd` | ARM64 installer | `KingPanel-Setup-1.0.1-arm64.exe` |
 
-Each architecture uses the same application source, resources, and installer definition. Generated EXEs stay in `dist` and are uploaded to GitHub Releases. The existing `assets`, `docs`, and `screenshots` folders keep their current locations.
+Each architecture uses the same application source, resources, and installer definition.
 
 The ARM64 files select the architecture automatically and call their corresponding existing builder, keeping the build logic in one place. Portable compilation and installer packaging remain separate, so you do not need both build tools installed on the same PC.
 
-### Portable app
+### x64
 
-Install Zig 0.13.0, then double-click:
+**Portable app**
 
-```bat
-build-portable.cmd
-```
+1. Install Zig 0.13.0
+2. Put Zig 0.13.0 into King Panel's repo.
+3. Double click build-portable.cmd
+4. King Panel.exe will be compiled in the `dist` folder
 
-This creates `dist\KingPanel.exe` and does **not** require NSIS.
+**Installer**
 
-### Installer
-
-Install NSIS 3.08 or newer and place an already-built `KingPanel.exe` in the `dist` folder, then double-click:
-
-```bat
-build-installer.cmd
-```
-
-This creates `dist\KingPanel-Setup-1.0.1.exe` and does **not** require Zig. The installer script packages the existing `dist\KingPanel.exe`; it does not rebuild it.
+1. Install NSIS 3.08
+2. Have a portable King Panel exe in the `dist` folder
+3. Double click build-installer.cmd
+4. King Panel-Setup.exe will be compiled in the `dist` folder
 
 ### Native ARM64
 
-Use the same Zig 0.13.0 compiler and NSIS 3.08 or newer. Double-click `build-portable-arm64.cmd` to compile the app, then double-click `build-installer-arm64.cmd` to package it. No command-line arguments are needed.
+**Portable app**
 
-These create `dist\KingPanel-arm64.exe` and `dist\KingPanel-Setup-1.0.1-arm64.exe`. You can cross-compile the ARM64 app on an x64 Windows PC; an ARM PC is only needed to test its behavior. The installer-only command requires the existing ARM64 portable EXE in `dist` and does not run Zig. It checks the EXE's architecture before packaging it.
+1. Install Zig 0.13.0
+2. Put Zig 0.13.0 into King Panel's repo.
+3. Double click build-portable-arm64.cmd
+4. King Panel.exe will be compiled in the `dist` folder
 
-The ARM64 installer installs the app as `Program Files\King Panel\KingPanel.exe`, keeping the same shortcuts and startup options. Close King Panel before switching an existing x64 installation on an ARM PC to ARM64. The small NSIS setup/uninstall programs remain x86 and use Windows' built-in emulation; the installed King Panel app is native ARM64. The ARM64 installer refuses to run on Intel/AMD PCs.
+**Installer**
 
-The original build files select x64 when double-clicked; the two `-arm64.cmd` files select ARM64. The builders search PATH and common Windows install locations. You may also provide explicit tool paths through `ZIG_EXE` or `NSIS_EXE`. Pass `nopause` in CI or automation, for example `build-portable-arm64.cmd nopause`. All outputs stay in `dist`; the x64 and ARM64 filenames do not overwrite each other.
+1. Install NSIS 3.08
+2. Have a portable King Panel exe in the `dist` folder
+3. Double click build-installer-arm64.cmd
+4. King Panel-Setup.exe will be compiled in the `dist` folder
 
-GitHub Actions builds both architectures. Tagged releases include both portable apps, both installers, and a combined `SHA256SUMS.txt`.
+**Note**
 
-Before releasing ARM64 support, test the tray menus, monitor detection, display changes and 15-second revert, scaling, HDR, installation, and uninstall on a Windows ARM64 device.
+You can cross-compile the ARM64 app on an x64 Windows PC; an ARM PC is only needed to test its behavior.
 
 ## Privacy
 
